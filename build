@@ -34,7 +34,7 @@ def dump_targets():
 
     for t in TARS:
         print
-        print os.path.basename(t)
+        print os.path.basename(t) + " >"
         for d in TARS[t]["incs"]:
             print "\t%d: %s"%(TARS[t]["incs"][d] , str(d))
 
@@ -49,7 +49,7 @@ def dump_idb():
 
 def dump_deps():
     print "DEP Entries: "+str(len(DEPS))
-    return
+    #return
     for d in DEPS:
         print
         print
@@ -126,12 +126,12 @@ def build_idb():
     incs = os.popen("find `pwd` | grep '\.h$'").read().split('\n')
 
     for f in incs:
+        
+        if len(f) == 0: continue
 
         H = os.path.basename(f) # header
         D = os.path.dirname(f)  # directory
-
-        #if not os.path.splitext(H)[1] == ".h": continue # XXX: redundant check?
-
+        
         if  not H in IDB:
             IDB[H] = { "dirs":[[D]] }
             continue
@@ -302,19 +302,14 @@ def target(name, deps):
     files = []
     for dep in deps:
         list = glob.glob(dep)
-      
-        for file in list:
-            if  not os.path.isfile(file):
-                print "ERROR: no such file '%s' in target '%s'" % (file, name)
-                continue
-            #end if
-            files += [os.path.abspath(file)]
-        #end for
+        if  not list: print "ERROR: no such file '%s' in target '%s'" % (dep,name)
+        for file in list: files += [os.path.abspath(file)]
     #end for
+    
+    if not files: return
 
     TARS[name]["deps"] = files
 
-    
     for dep in files:
         if dep in TARS:
             TARS[dep]["tars"].append(name)
@@ -435,9 +430,7 @@ for arg in sys.argv[1:]:
 
 #end for
 
-if  len(DIRS) == 0:
-    print "No build directories specified"
-    #sys.exit()
+if  len(DIRS) == 0: print "No build directories specified"
 
 #
 # Execute all the 'build' scripts in individual components
@@ -469,6 +462,6 @@ dump_deps()
 
 #build()
 
-#dump_targets()
+dump_targets()
 
 

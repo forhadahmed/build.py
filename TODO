@@ -1,0 +1,16 @@
+o Can we keep *all* files in an "IDB" type database? That way we can reference
+  source files by basename only:
+     
+      app.bin
+        app.c      (instead of src/app.c)
+        app_main.c (instead of src/app_main.c)
+  
+  Of course, there would be a need to do a lookup in the database for each 
+  basename specified (to derieve the full path of the file)
+
+o Refcounts for DEPS[]["tars"] and TARS[]["incs"]
+
+o DEPS walk and TARS walk to figure out files/targets to rebuild based on 
+  modifications
+
+
