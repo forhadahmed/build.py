@@ -1,0 +1,474 @@
+#! /usr/bin/env python
+
+import os,sys,glob
+
+
+
+
+OBJD=[];
+
+CC="gcc";
+ARGS=[];
+INCS=[".", "include"];
+DEFS=[];
+LIBS=["m", "rt", "pthread"];
+
+
+def run(*args): print ' '.join(args)
+    #os.popen(' '.join(args))
+#end def
+
+
+
+def savedef(): pass
+def restore(): pass
+def cc(tool): pass
+def objdir(path): pass
+def include(lst): pass
+def srcdirs(*dirs): pass
+
+
+
+
+def dump_targets():
+
+    for t in TARS:
+        print
+        print os.path.basename(t)
+        for d in TARS[t]["incs"]:
+            print "\t%d: %s"%(TARS[t]["incs"][d] , str(d))
+
+
+def dump_idb():
+    print "IDB Entries: "+str(len(IDB))
+    return
+    for i in IDB:
+        print i + " | " + str(IDB[i]["dirs"])
+
+
+
+def dump_deps():
+    print "DEP Entries: "+str(len(DEPS))
+    return
+    for d in DEPS:
+        print
+        print
+        print d + " > " 
+        for i in DEPS[d]["tars"]:
+            print "  " + str(i) + " |\t" + str(DEPS[d]["tars"][i])
+
+#
+# Check if two files are the same
+#
+def fmatch (a, b): return os.path.getsize(a) == os.path.getsize(b)
+
+#
+# Get the list of #include's for a file 
+#
+def ilist (file):
+
+    incs = []
+
+    if not os.path.isfile(file): return incs
+
+    lines = os.popen("grep '#include' "+file).read().split('\n')
+
+    for line in lines:
+        if  line == '': continue
+        tokens = line.split()
+        if len(tokens) < 2: continue
+        if  tokens[0] == "#include":
+            inc = tokens[1]
+            if inc[0] == '"' or inc[0] == '<':
+                incs.append(inc[1:-1])
+            #end if
+        #end if
+    #end for
+    
+    return incs
+
+#end def
+
+
+###############################################################################
+# 
+# Include file database. This is basically a dict of file:directory mappings.
+# 
+# An include file may appear in more than one directory (for whatever reason).
+# Furthermore, these files may be having the same content. The directory lists
+# are grouped together by the same include files.  
+# 
+# Example file list:
+#  
+#     $/include/common.h      << same
+#     $/include/types.h
+#     $/objects/header.h
+#     $/lib/include/common.h  << same
+#     $/test/common.h         << different
+#
+# Include file database:
+# 
+#     IDB['common.h'] = [ [include , lib/include], [test] ]
+#     IDB['types.h' ] = [ [include] ]
+#     IDB['header.h'] = [ [objects] ]
+# 
+# ---
+# 
+# Ideally, each unique header should be defined in *one* place, but for some
+# codebases, this is not the case, hence, this complicated database.
+#
+###############################################################################
+
+IDB={}
+
+def build_idb():
+
+    incs = os.popen("find `pwd` | grep '\.h$'").read().split('\n')
+
+    for f in incs:
+
+        H = os.path.basename(f) # header
+        D = os.path.dirname(f)  # directory
+
+        #if not os.path.splitext(H)[1] == ".h": continue # XXX: redundant check?
+
+        if  not H in IDB:
+            IDB[H] = { "dirs":[[D]] }
+            continue
+        #end if
+              
+        found = 0
+        for da in IDB[H]["dirs"]:
+            if found: break
+            for de in da:
+                file = os.path.join(de, H)
+                if  fmatch(f, file):
+                    da.append(D)
+                    found = 1
+                    break
+                #end if
+            #end for
+        #end for
+
+        if  not found:
+            IDB[H]["dirs"].append([D])
+        #end if
+ 
+    #end for
+
+#end def
+
+
+#
+# Match a base include file name in the IDB given the actual include file name
+# 
+# Example:
+#
+def idb_match(file, i, inc):
+    
+    if not i in IDB: return
+
+    L = len(inc)
+    grps = IDB[i]["dirs"]  ## 'dirs' is really a group of dirs
+
+    matches = {}
+    for gi, grp in enumerate(grps):
+        for d in grp:
+            p = os.path.join(d, i)
+            if  p[-L:] == inc:
+                matches[gi] = p[:-L]
+    #end for
+
+    gis = matches.keys()
+
+    if len(gis) == 0: return
+
+    if len(gis) == 1: return matches[gis[0]]
+
+    #
+    # If the include file matched multiple group indices then we have to prompt 
+    # the user to figure out which path she wants
+    #
+    # XXX: todo
+    
+#end def
+        
+     
+###############################################################################
+# 
+# Include dependency database (implicit dependencies) 
+#
+###############################################################################
+
+DEPS={}
+
+
+#
+# DFS a file to traverse its #include chain and build #include lists for each
+# file along the chain
+# 
+def build_ilist(file, r):
+    
+    if  file in DEPS: return
+
+    #print 2*r*" " + "> " + file
+
+    DEPS[file] = { "incs": {} , "tars": {} }
+  
+    incs = ilist(file)
+
+    for inc in incs:
+
+        DEPS[file]["incs"][inc] = {}
+
+        i = os.path.basename(inc)
+        p = idb_match(file, i, inc)
+
+        if not p: continue
+
+        DEPS[file]["incs"][inc] = { "path": p }
+
+        build_ilist(os.path.join(p, inc), r+1)   
+
+    #end for
+
+#end 
+
+
+#
+# Build the include-directory list for a given source file
+#      
+def build_idlist (target, file):
+
+    if  not file: 
+        file = target 
+    else:
+        if target in DEPS[file]["tars"]: return
+        DEPS[file]["tars"][target] = 1
+    #end if
+ 
+    incs = DEPS[file]["incs"]
+
+    for inc in incs:
+
+        if not "path" in DEPS[file]["incs"][inc]: continue
+
+        p = DEPS[file]["incs"][inc]["path"]
+
+        TARS[target]["incs"][p] = 1
+
+        build_idlist(target, os.path.join(p, inc))   
+
+    #end for
+
+#end    
+  
+
+def build_deps():
+
+    for t in TARS:
+        if "deps" in TARS[t]: continue
+        build_ilist(t, 0)
+
+    for t in TARS:
+        if "deps" in TARS[t]: continue
+        build_idlist(t, 0)
+    
+#end def
+
+
+###############################################################################
+# 
+# Targets database (explicit dependencies).
+#
+###############################################################################
+
+TARS={}
+
+def target(name, deps):
+ 
+    path = os.getcwd()
+
+    if  name in TARS:
+        print "ERROR: target '%s' declared multiple times" % name
+        return
+    #end if
+    
+    TARS[name] = { "tool":CC,"args":"-fPIC","tars":[],"path":path,"incs":{} }
+
+    #
+    # Expand any wildcarded dependencies into a list of dependencies
+    #
+    files = []
+    for dep in deps:
+        list = glob.glob(dep)
+      
+        for file in list:
+            if  not os.path.isfile(file):
+                print "ERROR: no such file '%s' in target '%s'" % (file, name)
+                continue
+            #end if
+            files += [os.path.abspath(file)]
+        #end for
+    #end for
+
+    TARS[name]["deps"] = files
+
+    
+    for dep in files:
+        if dep in TARS:
+            TARS[dep]["tars"].append(name)
+        else:
+            TARS[dep] = { "tool":CC,"args":"-c "+dep,"path":path,"incs":{},"tars":[name] }
+        #end if
+        
+    #end for
+
+#end def
+
+
+def compiler_output(out): return '-o '+out
+def prefix_list(p, L): return ' '.join([p + i for i in L])
+def string_list(objs): return ' '.join(objs)
+ 
+def compile_source(c):
+
+    target = TARS[c]
+    
+    obj = os.path.splitext(os.path.basename(c))[0]+".o"
+    
+    run(
+    target["tool"], 
+    compiler_output(obj),
+    target["args"],
+    prefix_list("-I", INCS), 
+    #string_list(target["deps"]),
+    prefix_list("-l", LIBS) 
+    )
+    
+#end def
+
+
+def compile_library(t):
+    
+    pass
+    
+#end def
+
+
+def link_program(p):
+    
+    pass
+    
+#end def
+ 
+ 
+ 
+
+
+
+def build():
+    for t in TARS:
+        if  "deps" in TARS[t]: continue
+        compile_source(t)
+    
+#end def
+
+
+ 
+
+################################################################################
+#
+# Main procedures for declaring build objects:
+#
+#   library() - declare librviary to be compiled from list of sources
+#   program() - declare binary to be compiled from list of sources / objects
+#
+################################################################################
+ 
+
+def library(name, *deps):
+    
+    target(name, deps)
+    
+#end def
+
+
+def program(name, *deps):
+    
+    target(name, deps)
+    
+#end def
+
+
+################################################################################
+#
+# Main
+#
+################################################################################
+
+CWD = os.getcwd()
+
+DIRS = []
+
+for arg in sys.argv[1:]:
+
+    if  arg[0] == '-':
+        parse_opt(arg)
+        continue
+    #end if
+
+    if  "=" in arg:
+        parse_arg(arg)
+        continue
+    #end if
+
+    if  os.path.isdir(arg):
+        if  os.path.isfile(os.path.join(arg, "build")):
+            DIRS.append(arg)
+        else:
+            print "ERROR: no 'build' script in '%s'" % arg
+        #end if
+    else:
+        print "ERROR: no directory '%s'" % arg
+    #end if
+
+#end for
+
+if  len(DIRS) == 0:
+    print "No build directories specified"
+    #sys.exit()
+
+#
+# Execute all the 'build' scripts in individual components
+#
+for d in DIRS:
+
+    os.chdir(CWD)
+    os.chdir(d)
+
+    execfile("build")
+
+os.chdir(CWD)
+
+ 
+
+ 
+
+#
+#  
+#
+
+build_idb()
+
+dump_idb()
+
+build_deps()
+
+dump_deps()
+
+#build()
+
+#dump_targets()
+
+
