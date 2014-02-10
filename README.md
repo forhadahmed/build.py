@@ -1,3 +1,3 @@
- ![Luna programming language](http://github.com/forhadahmed/build.py/blob/master/logo.png)
+ ![Luna programming language](https://raw.github.com/forhadahmed/build.py/master/logo.png)
  
 Simple Python build system (for C/C++)
