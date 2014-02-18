@@ -14,7 +14,8 @@ DEFS=[];
 LIBS=["m", "rt", "pthread"];
 
 
-def run(*args): print ' '.join(args)
+def run(*args): 
+    print ' '.join(args)
     #os.popen(' '.join(args))
 #end def
 
@@ -31,7 +32,6 @@ def srcdirs(*dirs): pass
 
 
 def dump_targets():
-
     for t in TARS:
         print
         print os.path.basename(t) + " >"
@@ -224,7 +224,7 @@ def build_ilist(file, r):
         i = os.path.basename(inc)
         p = idb_match(file, i, inc)
 
-        if not p: continue
+        if not p: continue  ## included file not found in IDB...
 
         DEPS[file]["incs"][inc] = { "path": p }
 
@@ -398,6 +398,24 @@ def program(name, *deps):
 
 ################################################################################
 #
+#
+#
+################################################################################
+
+def parse_opt(arg):
+    
+    arg = arg[1:]
+
+    if  arg[0] == 'D':
+        DEFS.append(arg[1:])
+        
+    
+def parse_arg(arg):
+    pass
+    
+
+################################################################################
+#
 # Main
 #
 ################################################################################
@@ -405,6 +423,8 @@ def program(name, *deps):
 CWD = os.getcwd()
 
 DIRS = []
+
+MAKEFILE = "Makefile.py"
 
 for arg in sys.argv[1:]:
 
@@ -414,15 +434,15 @@ for arg in sys.argv[1:]:
     #end if
 
     if  "=" in arg:
-        parse_arg(arg)
+        parse_val(arg)
         continue
     #end if
 
     if  os.path.isdir(arg):
-        if  os.path.isfile(os.path.join(arg, "build")):
+        if  os.path.isfile(os.path.join(arg, MAKEFILE)):
             DIRS.append(arg)
         else:
-            print "ERROR: no 'build' script in '%s'" % arg
+            print "ERROR: no '%s' script in '%s'" % (MAKEFILE,arg)
         #end if
     else:
         print "ERROR: no directory '%s'" % arg
@@ -433,14 +453,14 @@ for arg in sys.argv[1:]:
 if  len(DIRS) == 0: print "No build directories specified"
 
 #
-# Execute all the 'build' scripts in individual components
+# Execute all the $MAKEFILE scripts in individual components
 #
 for d in DIRS:
 
     os.chdir(CWD)
     os.chdir(d)
 
-    execfile("build")
+    execfile(MAKEFILE)
 
 os.chdir(CWD)
 
